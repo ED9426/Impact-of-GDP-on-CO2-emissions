@@ -1,0 +1,307 @@
+---
+title: "Final project"
+output: html_document
+---
+
+## Introduction:
+
+Question: How does GDP impact CO2 emissions?
+
+Reasons for analysis: CO2 emissions are impacting climate change, and contribute to many current health impacts, so we are interested in seeing how the a country's GDP impacts the levels of CO2 that they emit. CO2 traps heat which can lead to climate change, and respiratory issues due to the smog and air pollution
+
+Thesis: CO2 emissions are causing a wide variety of environmental and health issues throughout the world. We believe that people in countries with a higher GDP per capita are larger contributors to the rise in CO2 emissions than countries with a smaller GDP per capita.
+
+## Background:
+
+Data: Our first set of data was found on Kaggle and was collected by OurWorldInData. It contains the CO2 emissions for countries in the years 1750 through 2017. The variables in the data are the countries, their country abbreviations, the year, and the CO2 emissions from that year ^[https://www.kaggle.com/yoannboyere/co2-ghg-emissionsdata]. Our second dataset was also found on Kaggle and was originally from Worldometers. This dataset contains the country, the year from 1994-2017, and the GDP per capita in units of U.S. dollars ^[https://www.kaggle.com/themlphdstudent/country-wise-gdp-from-1994-to-2017].
+
+Note: For this project we will only be using the data for the years 2012-2017 from both of our datasets.
+
+Variables:
+
+- CO2 emissions: CO2 emitted by a country in units of tonnes.
+
+- GDP: standard measure of the value added created through the production of goods and services in a country during a certain period.
+
+- GDP per capita: GDP of a country divided by its population, in units of 1000 USD.
+
+Unusual Factors: Although a country's GDP may be one factor in determining their CO2 emissions, it also could be influenced by a variety of other factors such as people's behavior and a country's policies. Therefore, despite any correlation, we cannot make any definite conclusions on the impact of GDP on CO2 emissions as we are not taking into account the other factors. 
+
+Goals: We want to look at how the GDP per capita of the countries correlates with their CO2 emission levels per person, and compare the different nations.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message=FALSE, warnings=FALSE)
+library(tidyverse)
+library(lubridate)
+library(modelr)
+```
+
+
+```{r echo=FALSE}
+threshold_year = 2012
+
+co2 = read_csv("co2_emission.csv") %>% 
+  filter(Year >= threshold_year) %>% 
+  drop_na(Code) %>% 
+  rename(Country = Entity)
+
+gdp = read_csv("gdp.csv") %>% 
+  filter(Year >= threshold_year)
+
+combined_df = co2 %>% 
+  left_join(gdp, by = c("Country", "Year")) %>% 
+  drop_na("GDP Real (in USD)") %>% 
+  rename(
+    co2_emissions = `Annual CO₂ emissions (tonnes )`,
+    gdp_real = `GDP Real (in USD)`,
+    gdp_per_capita = `GDP per capita (in USD)`
+    ) %>% 
+  mutate(co2_emissions_per_person = co2_emissions / Population,
+         gdp_per_capita = gdp_per_capita / 1000) %>% 
+  select(Country, Year, Population, co2_emissions, gdp_real, co2_emissions_per_person, gdp_per_capita)
+```
+
+**Overview:**
+
+Graph faceted by year to see the general trend for different years:
+
+```{r echo=FALSE}
+ggplot(combined_df, mapping = aes(x = gdp_per_capita, y = co2_emissions_per_person)) +
+  geom_point(alpha = 0.2) +
+  facet_wrap(~Year, nrow = 2) +
+  geom_smooth(method = lm, se=F) +
+  xlab("GDP per capita (1000 USD)") +
+  ylab("CO2 emissions per person (Tonnes)") +
+  ggtitle("GDP per capita vs CO2 emissions per person", subtitle = "From 2012-2017, faceted by year")
+```
+
+This graph shows us that the trend between GDP per capita and CO2 emissions per person has not changed much over these six years. This means that the mean values of GDP per capita and CO2 emissions per person will be good approximations to use for our analysis.
+
+Preview of the final dataset:
+
+```{r echo=FALSE}
+avg_df = combined_df %>% 
+  group_by(Country) %>% 
+  summarize(
+    avg_co2_emissions_per_person = mean(co2_emissions_per_person),
+    avg_gdp_per_capita = mean(gdp_per_capita)
+  )
+head(avg_df)
+```
+
+Variables:
+
+- Country: name of country
+
+- avg_co2_emissions_per_person: Average CO2 emissions per person in tonnes
+
+- avg_gdp_per_capita: Average GDP per capita in 1000 USD
+
+## Analysis:
+
+Method: Calculated the mean GDP per capita and mean CO2 emissions per person from 2012-2017 for each country, then graphed these variables using a scatterplot. Also added both a smooth curve and a regression line using the lm method to view their relationship.
+
+Graph:
+
+```{r echo=FALSE}
+ggplot(avg_df, mapping = aes(x = avg_gdp_per_capita, y = avg_co2_emissions_per_person)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = lm, se = F) +
+  geom_smooth(se = F) +
+  xlab("Average GDP per capita (1000 USD)") +
+  ylab("Average CO2 emissions per person (Tonnes)") +
+  ggtitle("Average GDP per capita vs Average CO2 emissions per person", subtitle = "From 2012-2017")
+```
+
+Results:
+
+The regression line shows us that the overall relationship between GDP per capita and CO2 emissions per person is positive. However, the smooth curve tells us that this relationship is much stronger for countries with GDP per capita <= 25,000 USD and is much weaker for GDP per capita > 25,000 USD. 
+
+**Evidence to support claim:**
+
+Regression model summary:
+
+```{r include=FALSE}
+extract_lm = function(x)
+{
+  out = as_tibble(coef(summary(x)), rownames = "parameter") %>% 
+    rename(estimate = Estimate,
+           se = `Std. Error`,
+           t = `t value`,
+           p_value = `Pr(>|t|)`)
+
+  return ( out )
+}
+```
+
+
+```{r echo=FALSE}
+fit = lm(avg_co2_emissions_per_person ~ avg_gdp_per_capita, data = avg_df)
+summary_df = extract_lm(fit) %>% 
+  mutate(parameter = c("Intercept", "Slope")) %>% 
+  select(parameter, estimate, se, p_value)
+summary_df
+```
+
+Residual Plot:
+
+```{r echo=FALSE}
+residual_df = avg_df %>%
+  add_residuals(fit)
+
+ggplot(residual_df, mapping = aes(x = avg_gdp_per_capita, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(se=F) +
+  geom_hline(yintercept = 0) +
+  ylab("Residuals") +
+  xlab("Average GDP per capita (1000 USD)") +
+  ggtitle("Residual plot")
+```
+
+Results:
+
+- Slope = 0.191, which means that for every increase of 1000 USD in GDP per capita there is an increase of 0.191 tonnes of CO2 emissions per person
+
+- p-value = 5.333760e-17
+
+- The smooth line of the residual plot moves away from y = 0, which indicates a lack of model fit as GDP per capita gets larger.
+
+
+**Further Analysis:**
+
+Method: A comparison between the regression line and the smooth curve, as well as the residual plot of our initial model, revealed the model to be fairly inaccurate. The smooth curve told us that the relationship between GDP per capita and CO2 emissions per person is much stronger for countries with GDP per capita <= 25,000 USD and is much weaker for GDP per capita > 25,000 USD. As a result, we have decided to split the data into two groups at this threshold, and create two separate models using the same steps as above. The first model will be for countries with average GDP per capita <= 25,000 USD, and the second model will be for countries with average GDP per capita > 25,000 USD.
+
+Graph 1:
+
+```{r echo=FALSE}
+avg_df_low_gdp = avg_df %>% 
+  filter(avg_gdp_per_capita <= 25)
+
+ggplot(avg_df_low_gdp, mapping = aes(x = avg_gdp_per_capita, y = avg_co2_emissions_per_person)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = lm, se = F) +
+  geom_smooth(se = F) +
+  xlab("Average GDP per capita (1000 USD)") +
+  ylab("Average CO2 emissions per person (Tonnes)") +
+  ggtitle("Average GDP per capita vs Average CO2 emissions per person", subtitle = "From 2012-2017, for countries where average GDP per capita <= 25,000 USD")
+```
+
+Results:
+
+The regression line shows us that the overall relationship between GDP per capita and CO2 emissions per person is positive. The regression line and the smooth curve are very similar which indicates that this model is more accurate.
+
+**Evidence to support claim:**
+
+Regression model summary 1:
+
+```{r echo=FALSE}
+fit = lm(avg_co2_emissions_per_person ~ avg_gdp_per_capita, data = avg_df_low_gdp)
+summary_df = extract_lm(fit) %>% 
+  mutate(parameter = c("Intercept", "Slope")) %>% 
+  select(parameter, estimate, se, p_value)
+summary_df
+```
+
+Residual Plot 1:
+
+```{r echo=FALSE}
+residual_df = avg_df_low_gdp %>%
+  add_residuals(fit)
+
+ggplot(residual_df, mapping = aes(x = avg_gdp_per_capita, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(se=F) +
+  geom_hline(yintercept = 0) +
+  ylab("Residuals") +
+  xlab("Average GDP per capita (1000 USD)") +
+  ggtitle("Residual plot")
+```
+
+Results:
+
+- Slope = 0.492, which means that for every increase of 1000 USD in GDP per capita there is an increase of 0.492 tonnes of CO2 emissions per person
+
+- p-value = 1.731318e-19
+
+- The smooth curve of the residual plot remains close to y = 0 as GDP per capita increases, which indicates a good model fit.
+
+
+
+Graph 2:
+
+```{r echo=FALSE}
+avg_df_high_gdp = avg_df %>% 
+  filter(avg_gdp_per_capita > 25)
+
+ggplot(avg_df_high_gdp, mapping = aes(x = avg_gdp_per_capita, y = avg_co2_emissions_per_person)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(method = lm, se = F) +
+  geom_smooth(se = F) +
+  xlab("Average GDP per capita (1000 USD)") +
+  ylab("Average CO2 emissions per person (Tonnes)") +
+  ggtitle("Average GDP per capita vs Average CO2 emissions per person", subtitle = "From 2012-2017, for countries where average GDP per capita > 25,000 USD")
+```
+
+Results:
+
+The regression line shows us that the overall relationship between GDP per capita and CO2 emissions per person is positive but very close to 0. The regression line and the smooth curve are very similar which indicates that this model is more accurate.
+
+**Evidence to support claim:**
+
+Regression model summary 2:
+
+```{r echo=FALSE}
+fit = lm(avg_co2_emissions_per_person ~ avg_gdp_per_capita, data = avg_df_high_gdp)
+summary_df = extract_lm(fit) %>% 
+  mutate(parameter = c("Intercept", "Slope")) %>% 
+  select(parameter, estimate, se, p_value)
+summary_df
+```
+
+Residual Plot 2:
+
+```{r echo=FALSE}
+residual_df = avg_df_high_gdp %>%
+  add_residuals(fit)
+
+ggplot(residual_df, mapping = aes(x = avg_gdp_per_capita, y = resid)) +
+  geom_point(alpha = 0.3) +
+  geom_smooth(se=F) +
+  geom_hline(yintercept = 0) +
+  ylab("Residuals") +
+  xlab("Average GDP per capita (1000 USD)") +
+  ggtitle("Residual plot")
+```
+
+Results:
+
+- Slope = 0.056, which means that for every increase of 1000 USD in GDP per capita there is an increase of 0.056 tonnes of CO2 emissions per person
+
+- p-value = 0.54471231
+
+- The smooth curve of the residual plot stays very close to y = 0 as GDP per capita increases, which indicates a good model fit.
+
+
+## Discussion:
+
+Interpretation: 
+
+Our null hypothesis states that there is no relationship between GDP per capita and CO2 emissions per person.
+
+- For our aggregate model, there is strong evidence (p-value = 5.33e-17) to disprove our null hypothesis, suggesting that there is a positive relationship (slope = 0.191) between GDP per capita and CO2 emissions per person. However, the residual plot as well as a comparison between the smooth curve and the regression line tell us that this model is fairly inaccurate.
+
+- For countries where average GDP per capita <= 25,000 USD, our model showed that there is strong evidence (p-value = 1.73e-19) to disprove our null hypothesis, suggesting that there is a positive relationship (slope = 0.492) between GDP per capita and CO2 emissions per person. The residual plot as well as a comparison between the smooth curve and the regression line tell us that this model is much more accurate than our aggregate model. It is also important to note that the slope we get for this model is much greater than the slope of our initial model, which tells us that the increase in CO2 emissions for every 1000 USD increase in GDP per capita is much greater for countries where average GDP per capita <= 25,000 USD.
+
+- For countries where average GDP per capita > 25,000 USD, our model showed that there is a lack of evidence (p-value = 0.54471231) to disprove our null hypothesis, suggesting that there is no relationship between GDP per capita and CO2 emissions per person. The residual plot as well as a comparison between the smooth curve and the regression line tell us that this model is much more accurate than our aggregate model. It is also important to note that the slope we get for this model is much smaller than the slope of our initial model, which tells us that the increase in CO2 emissions for every 1000 USD increase in GDP per capita is much smaller for countries where average GDP per capita > 25,000 USD.
+
+
+Potential short-comings: 
+
+CO2 emissions for countries with an average GDP per capita greater than 25,000 USD are not consistent with the aggregate data. Therefore, the conclusions of this project can only support countries with an average GDP per capita below 25,000 USD, which leads to insufficient precision. This project only analyzes the relationship between CO2 emissions and GDP per capita for 2012-2017. In other years, the relationship between CO2 emissions and GDP per capita may be different, so the conclusions of this project are not generalizable. According to the plots obtained from the analysis, the rate of change in CO2 emissions with GDP per capita differs between countries with lower and higher GDP per capita. Therefore, although the conclusion of this project represents a positive correlation between GDP per capita and CO2 emissions in general, the degree of correlation varies from country to country, and the conclusion may not be applicable to all countries.
+
+
+Potential future directions: 
+
+Because of the distinction made between countries with a lower GDP per capita than 25,000 and countries with a GDP per capita of more than 25,000 it is important to analyze the future potential findings of each independent case. To start, the countries with a GDP per capita less than 25,000 have a linear relationship between GDP per capita  and CO2 emissions. Since GDP is used as a measure of standard of living or well being of a country, and both GDP and CO2 emissions are related as explained above, this would mean that if a country were to increase their GDP per capita then inevitably it would cause an increase in CO2 emissions of that country. However, this is not ideal as CO2 emissions are one of the causing factors of climate change. A potential future study into the causing factors of these CO2 emissions would yield ways countries could go about decreasing their emissions. On the other hand, countries who have a GDP per capita higher than 25,000 did not have a direct relationship with CO2 emissions. One potential future study that could be done on this data, is finding out what natural resources are exported in these countries and what is the physical, social and economic cost of obtaining these resources.
+
